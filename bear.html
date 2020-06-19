@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <title>camera move</title>
+  <meta charset="utf-8">
+  <style>
+    body {
+      color: #ffffff;
+      font-family: Monospace;
+      font-size: 13px;
+      text-align: center;
+      font-weight: bold;
+
+      background-color: #050505;
+      margin: 0px;
+      padding: 0px;
+      overflow: hidden;
+    }
+
+    #container {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    #v3d-canvas {
+      position: absolute;
+      top: 0px;
+      left: 0px;
+      width: 100%;
+      height: 100%;
+    }
+
+    .move {
+      position: absolute;
+      right: 30px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 999;
+      width: 80px;
+      height: 40px;
+      line-height: 40px;
+      text-align: center;
+      color: #000;
+      border: 1px solid #000;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container">
+    <div id="v3d-canvas"></div>
+    <div class="move" onclick="handleMove()">move</div>
+  </div>
+
+  <script src="./build/v3d.js"></script>
+  <script src="./build/positionUtils.js"></script>
+  <script src="./build/OrbitControls.js"></script>
+
+  <script>
+    var app;
+    var isMove = false;
+
+    var originSideDots = {};
+
+    var sideDots = {
+      centerDot: { x: 0, y: -10, z: 0 },
+      dot1: { x: 0, y: -8, z: 0 },
+      dot2: { x: -3, y: -8, z: 0 },
+    };
+
+    init();
+
+    function init() {
+      // 加载模型
+      var url = 'models/bear.glb';
+      app = new v3d.App('container', null, new v3d.SimplePreloader({
+        container: 'container'
+      }));
+      app.loadScene(url, function (scene) {
+        console.log(app);
+        app.enableControls();
+        app.run();
+
+        var controls = new v3d.OrbitControls(app.camera, app.container);
+        controls.screenSpacePanning = false;
+        controls.enableKeys = false;
+        controls.enablePan = false;
+
+        const origin = app.controls.targetObj.position.clone();
+        originSideDots = {
+          centerDot: { x: origin.x, y: origin.y, z: origin.z },
+          dot1: { x: origin.x, y: origin.y + 2, z: origin.z },
+          dot2: { x: origin.x - 2, y: origin.y + 2, z: origin.z },
+        }
+
+        const bear = scene.getObjectByName('metal_bear_small');
+        const axisHelper = new v3d.AxesHelper(20);
+        axisHelper.position.set(sideDots.centerDot.x, sideDots.centerDot.y, sideDots.centerDot.z);
+        bear.add(axisHelper);
+      });
+    }
+
+    function handleMove() {
+      isMove = !isMove;
+      if (isMove) {
+        moveCamera('metal_bear_small', sideDots);
+      } else {
+        moveCamera('', originSideDots);
+      }
+    }
+
+    function moveCamera(groupName, sideDots) {
+
+      const camera = app?.camera;
+      if (!camera) return;
+
+      let group;
+      if (groupName === 'metal_bear_small') {
+        group = app?.scene.getObjectByName('metal_bear_small');
+
+        const chain = app?.scene.getObjectByName('metal_chain_001');
+        chain.visible = false;
+      } else {
+        group = app?.scene.getObjectByName('metal_chain_001');
+
+        const chain = app?.scene.getObjectByName('metal_chain_001');
+        chain.visible = true;
+      }
+
+
+      const {
+        size: { length: xlen, width: zlen, height: ylen },
+      } = calcGroupFrame(group);
+      if (xlen === Math.abs(Infinity) || zlen === Math.abs(Infinity) || ylen === Math.abs(Infinity)) return;
+
+      const centerDot = new v3d.Object3D();
+      const dot1 = new v3d.Object3D();
+      const dot2 = new v3d.Object3D();
+      group.add(centerDot);
+      group.add(dot1);
+      group.add(dot2);
+
+      centerDot.position.set(sideDots.centerDot.x, sideDots.centerDot.y, sideDots.centerDot.z);
+      dot1.position.set(sideDots.dot1.x, sideDots.dot1.y, sideDots.dot1.z);
+      dot2.position.set(sideDots.dot2.x, sideDots.dot2.y, sideDots.dot2.z);
+
+      app?.scene.updateMatrixWorld();
+      centerDot.parent.updateMatrixWorld();
+      centerDot.updateMatrixWorld();
+      dot1.updateMatrixWorld();
+      dot2.updateMatrixWorld();
+
+      var centerDot_vector = new v3d.Vector3();
+      centerDot_vector.setFromMatrixPosition(centerDot.matrixWorld);
+
+      var dot1_vector = new v3d.Vector3();
+      dot1_vector.setFromMatrixPosition(dot1.matrixWorld);
+
+      var dot2_vector = new v3d.Vector3();
+      dot2_vector.setFromMatrixPosition(dot2.matrixWorld);
+
+      group.remove(centerDot);
+      group.remove(dot1);
+      group.remove(dot2);
+
+      const frame = 50;
+      const points = calcCameraPosition(
+        camera.fov,
+        camera.aspect,
+        camera.up,
+        app.controls.targetObj.position,
+        centerDot_vector,
+        dot1_vector,
+        dot2_vector,
+        [xlen, zlen, ylen],
+        camera.position,
+        frame,
+      );
+
+      let index = 0;
+      if (a) {
+        clearInterval(a);
+        a = null;
+      }
+      var a = setInterval(function () {
+        const { position, center, up } = points[index];
+
+        camera.position.set(position.x, position.y, position.z);
+
+        camera.lookAt(center);
+        app.controls.targetObj.position.set(center.x, center.y, center.z);
+        app.controls.update();
+
+        camera.up.x = up.x;
+        camera.up.y = up.y;
+        camera.up.z = up.z;
+
+        index++;
+        if (index > frame) {
+          clearInterval(a);
+          a = null;
+        }
+      }, 20);
+    }
+
+    function calcGroupFrame(group) {
+      const boxs = [];
+      group.traverse(item => {
+        if (item.isMesh && item.visible) {
+          const box = new v3d.Box3();
+          box.expandByObject(item);
+          boxs.push({
+            max: box.max,
+            min: box.min,
+          });
+        }
+      });
+
+      let minX = Infinity;
+      let minY = Infinity;
+      let minZ = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+      let maxZ = -Infinity;
+      boxs.forEach(box => {
+        minX = Math.min(minX, box.min.x);
+        minY = Math.min(minY, box.min.y);
+        minZ = Math.min(minZ, box.min.z);
+        maxX = Math.max(maxX, box.max.x);
+        maxY = Math.max(maxY, box.max.y);
+        maxZ = Math.max(maxZ, box.max.z);
+      });
+      const xlen = maxX - minX;
+      const ylen = maxY - minY;
+      const zlen = maxZ - minZ;
+
+      const x = minX + xlen / 2;
+      const y = minY + ylen / 2;
+      const z = minZ + zlen / 2;
+
+      return {
+        size: { length: xlen, width: zlen, height: ylen },
+        center: { x, y, z },
+      };
+    }
+
+  </script>
+
+</body>
+
+</html>
